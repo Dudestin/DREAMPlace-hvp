@@ -87,7 +87,23 @@ $$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+
 
 ### Future direction
 
-This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://github.com/NVlabs/INSTA), [C3PO](https://research.nvidia.com/labs/electronic-design-automation/publication/lu2026aspdac/)) introduce strong indefiniteness into the Hessian landscape. Since the density and wirelength objectives are effectively convex, the dominant non-convexity originates from timing — and the timing HVP can be computed via `torch.autograd.functional.hvp()` through PyTorch-based differentiable STA, requiring no custom CUDA kernels. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
+This HVP implementation is a building block toward 
+**Saddle-Free Newton** optimization for timing-driven 
+placement, where differentiable STA objectives introduce 
+strong indefiniteness into the Hessian landscape. Since the 
+density and wirelength objectives are effectively convex, 
+the dominant non-convexity originates from timing.
+
+Computing the timing HVP remains an open challenge: 
+current differentiable STA frameworks such as 
+[INSTA](https://github.com/NVlabs/INSTA) distribute 
+their GPU-accelerated STA kernels as pre-compiled binaries, 
+preventing autograd-based HVP computation. Analytical 
+derivation of the timing HVP — using the same adjoint 
+approach applied to the density term in this fork — 
+is a promising direction. Second-order methods can then 
+escape timing-induced saddle points by flipping the sign 
+of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
 
 ---
 
