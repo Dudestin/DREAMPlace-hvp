@@ -45,11 +45,11 @@ All HVPs are verified against finite differences
 
 The density gradient in DREAMPlace follows a three-stage pipeline:
 
-$$\nabla E = J_\rho^\top \; G \; \rho$$
+$$\nabla E = J_\rho^\top G \rho$$
 
 where $J_\rho$ is the density Jacobian (scatter), $G$ is the Poisson Green's function (DCT-based spectral solve), and $\rho$ is the density map. The HVP is its linearization:
 
-$$H \cdot v = J_\rho^\top \; G \; J_\rho \; v$$
+$$H \cdot v = J_\rho^\top G J_\rho v$$
 
 This decomposes into three steps with **identical computational structure** to the gradient:
 
