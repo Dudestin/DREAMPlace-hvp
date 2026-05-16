@@ -64,6 +64,30 @@ $$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+
 | Full HVP (field-only FD) | $J_\rho^\top$ fixed, field perturbed | **3.6 × 10⁻⁴** |
 | Full pipeline (pos FD, includes Term1') | pos and field both perturbed | 10.8% (expected, due to Term1') |
 
+### Convexity of the density objective
+
+The density Hessian $H_\text{density} = J_\rho^\top G J_\rho$ is 
+**positive semi-definite** by construction: $G$ is the Poisson 
+Green's function whose eigenvalues $1/(k^2 + h^2)$ are strictly 
+positive (after zero-mode removal), and $J^\top A J \succeq 0$ 
+for any PSD matrix $A$. This is a Gauss-Newton structure — 
+the second-order residual term (Term1') vanishes almost 
+everywhere because the piecewise-linear basis functions 
+have zero second derivatives.
+
+This means the density objective **cannot produce saddle points**. 
+In a timing-driven placement, all non-convexity originates from 
+the timing loss term, whose min-of-sums structure creates 
+regions of negative curvature. 
+
+**Practical implication**: second-order optimization (Saddle-Free 
+Newton) need only be applied to the timing objective. The timing 
+loss in differentiable STA frameworks such as INSTA is implemented 
+in PyTorch, so its HVP can be computed directly via 
+`torch.autograd.functional.hvp()` — no custom CUDA kernels required. 
+The density and wirelength terms can remain under first-order 
+optimization (Nesterov).
+
 ### Future direction
 
 This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://github.com/NVlabs/INSTA), [C3PO](https://research.nvidia.com/labs/electronic-design-automation/publication/lu2026aspdac/)) introduce strong indefiniteness into the Hessian landscape. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
