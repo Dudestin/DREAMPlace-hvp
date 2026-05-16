@@ -75,7 +75,7 @@ For the **wirelength terms**, standard pos-perturbation FD works directly, as th
 
 For the **density term**, direct FD is complicated by the piecewise-linear basis functions: when $\text{pos} + \varepsilon v$ crosses a bin boundary, $J_\rho^\top$ jumps discontinuously, producing an $O(1)$ residual unrelated to the HVP accuracy. We use **field-only finite differences** — fixing $J_\rho^\top$ at the original position and perturbing only the density field:
 
-$$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+\varepsilon v) - G\rho(\text{pos})}{\varepsilon} \;\approx\; J_\rho^\top G J_\rho v$$
+$$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+\varepsilon v) - G\rho(\text{pos})}{\varepsilon} \approx J_\rho^\top G J_\rho v$$
 
 | Verification | Method | Relative error |
 |---|---|---|
