@@ -66,7 +66,7 @@ $$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+
 
 ### Future direction
 
-This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://arxiv.org/abs/2501.07071), [C3PO](https://research.nvidia.com/publication/2025-01_c3po)) introduce strong indefiniteness into the Hessian landscape. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
+This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://github.com/NVlabs/INSTA), [C3PO](https://research.nvidia.com/labs/electronic-design-automation/publication/lu2026aspdac/)) introduce strong indefiniteness into the Hessian landscape. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
 
 ---
 
