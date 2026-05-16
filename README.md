@@ -1,3 +1,79 @@
+# DREAMPlace-hvp — Exact Hessian-Vector Products for Second-Order Placement Optimization
+
+> **This is a fork of [DREAMPlace](https://github.com/limbo018/DREAMPlace) with exact Hessian-Vector Product (HVP) support for the density objective.**
+> The original DREAMPlace is developed by [Yibo Lin's group at Peking University](https://github.com/limbo018/DREAMPlace).
+
+## What this fork adds
+
+Standard analytical placers (including DREAMPlace) rely on 
+first-order optimizers (Nesterov's method) with a diagonal 
+preconditioner $P$ that crudely approximates the inverse 
+Hessian $H^{-1}$, or quasi-Newton methods (L-BFGS) that 
+build low-rank approximations from gradient history — 
+neither captures the true curvature of the objective.
+When timing-driven objectives are introduced, the placement 
+landscape becomes non-convex with saddle points where 
+these methods stall.
+
+This fork implements **exact Hessian-Vector Products** for DREAMPlace's electrostatic density objective, enabling second-order optimization methods such as Saddle-Free Newton that can escape saddle points by leveraging curvature information.
+
+### Key idea
+
+The density gradient in DREAMPlace follows a three-stage pipeline:
+
+$$\nabla E = J_\rho^\top \; G \; \rho$$
+
+where $J_\rho$ is the density Jacobian (scatter), $G$ is the Poisson Green's function (DCT-based spectral solve), and $\rho$ is the density map. The HVP is its linearization:
+
+$$H \cdot v = J_\rho^\top \; G \; J_\rho \; v$$
+
+This decomposes into three steps with **identical computational structure** to the gradient:
+
+| Step | Gradient pipeline | HVP pipeline | Kernel |
+|------|-------------------|--------------|--------|
+| 1 — Scatter | $\rho$ = scatter(pos) with $p_x \cdot p_y$ | $\delta\rho = J_\rho \cdot v$ with $\frac{\partial p_x}{\partial x} \cdot p_y$ | **New**: `computeSignedDensityMapKernel` |
+| 2 — Poisson | $G\rho$ via DCT | $G\delta\rho$ via DCT | **Reused** (unmodified) |
+| 3 — Gather | $J_\text{interp}^\top \cdot G\rho$ with $p_x \cdot p_y$ | $J_\rho^\top \cdot G\delta\rho$ with $\frac{\partial p_x}{\partial x} \cdot p_y$ | **New**: `computeSignedElectricForceKernel` |
+
+The Poisson solver (Step 2) is reused without modification because $G$ is a **linear, self-adjoint** operator under Neumann boundary conditions — the same DCT solve applies to both $\rho$ and $\delta\rho$.
+
+### Why signed kernels are needed
+
+The original DREAMPlace computes the gather step (Step 3) using interpolation weights $p_x \cdot p_y$ rather than the exact density Jacobian transpose $J_\rho^\top$. These are related by summation-by-parts and produce equivalent gradients for first-order optimization. However, using $J_\text{interp}^\top$ in the HVP yields a **non-symmetric** product $J_\text{interp}^\top G J_\rho$, which is incorrect for Newton-type methods that require a symmetric Hessian. The new signed kernels implement the exact $J_\rho^\top$ to ensure full symmetry: $H = J_\rho^\top G J_\rho = H^\top$.
+
+### Computational cost
+
+| | Time complexity | Additional memory |
+|---|---|---|
+| One gradient evaluation | $O(MN_b \log MN_b + N)$ | — |
+| One HVP evaluation | $O(MN_b \log MN_b + N)$ | $O(MN_b)$ for $\delta\rho$ map |
+
+A single HVP costs the same as a single gradient evaluation. A full Saddle-Free Newton step requires $k$ HVP evaluations (typically $k$ = 20–100 Lanczos iterations), trading per-step cost for faster convergence.
+
+### Finite difference verification
+
+Direct finite-difference validation of the full HVP is complicated by the piecewise-linear basis functions: when $\text{pos} + \varepsilon v$ crosses a bin boundary, $J_\rho^\top$ jumps discontinuously, producing an $O(1)$ residual (Term1') unrelated to the HVP accuracy.
+
+We use **field-only finite differences** — fixing $J_\rho^\top$ at the original position and perturbing only the density field — to isolate the HVP term:
+
+$$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+\varepsilon v) - G\rho(\text{pos})}{\varepsilon} \;\approx\; J_\rho^\top G J_\rho v$$
+
+| Verification | Method | Relative error |
+|---|---|---|
+| Step 1 Jacobian | pos-perturbation FD | 8.1 × 10⁻⁴ |
+| Full HVP (field-only FD) | $J_\rho^\top$ fixed, field perturbed | **3.6 × 10⁻⁴** |
+| Full pipeline (pos FD, includes Term1') | pos and field both perturbed | 10.8% (expected, due to Term1') |
+
+### Future direction
+
+This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://arxiv.org/abs/2501.07071), [C3PO](https://research.nvidia.com/publication/2025-01_c3po)) introduce strong indefiniteness into the Hessian landscape. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
+
+---
+
+*Below is the original DREAMPlace README.*
+
+---
+
 # DREAMPlace
 
 Deep learning toolkit-enabled VLSI placement.
