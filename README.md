@@ -1,6 +1,6 @@
 # DREAMPlace-hvp — Exact Hessian-Vector Products for Second-Order Placement Optimization
 
-> **This is a fork of [DREAMPlace](https://github.com/limbo018/DREAMPlace) with exact Hessian-Vector Product (HVP) support for all objective terms.**
+> **This is a fork of [DREAMPlace](https://github.com/limbo018/DREAMPlace) with exact Hessian-Vector Product (HVP) support for all DREAMPlace objective terms.**
 > The original DREAMPlace is developed by [Yibo Lin's group at Peking University](https://github.com/limbo018/DREAMPlace).
 
 ## What this fork adds
@@ -11,19 +11,18 @@ preconditioner $P$ that crudely approximates the inverse
 Hessian $H^{-1}$, or quasi-Newton methods (L-BFGS) that
 build low-rank approximations from gradient history —
 neither captures the true curvature of the objective.
-When timing-driven objectives are introduced, the placement
-landscape becomes non-convex with saddle points where
-these methods stall.
+A diagonal preconditioner treats each cell independently, ignoring inter-cell correlations through shared nets, density coupling, and timing paths. When timing-driven objectives are introduced, the landscape becomes non-convex with saddle points where these methods stall.
 
-This fork implements **exact Hessian-Vector Products** for all three DREAMPlace objective terms, enabling second-order optimization methods such as Saddle-Free Newton that can escape saddle points by leveraging curvature information.
+This fork implements **exact Hessian-Vector Products** for all three DREAMPlace objective terms, enabling second-order optimization methods such as Saddle-Free Newton that can escape saddle points and produce coordinated updates across correlated cells.
 
-### HVP coverage and Hessian properties
+### Hessian analysis and second-order strategy
 
-| Term | Hessian structure | PSD? | HVP cost | Implementation |
-|------|-------------------|------|----------|----------------|
-| Electric density | $J_\rho^\top G J_\rho$ | ✓ PSD | $O(MN_b \log MN_b + N)$ | Poisson pipeline + new CUDA kernels ([detail below](#density-hvp-the-poisson-pipeline)) |
-| LogSumExp WL | Softmax Jacobian | ✓ PSD | $O(P)$ | Hand-derived closed-form, PyTorch |
-| Weighted-Average WL | Symmetric rank-2 update | **✗ Indefinite** | $O(P)$ | Hand-derived closed-form, PyTorch |
+| Term | Hessian structure | PSD? | Sparsity | Cost | Method |
+|------|-------------------|------|----------|------|--------|
+| Electric density | $J_\rho^\top G J_\rho$ | ✓ PSD | Dense | $O(MN_b \log MN_b + N)$ | HVP via Poisson pipeline + new CUDA kernels ([detail below](#density-hvp-the-poisson-pipeline)) |
+| LogSumExp WL | Softmax Jacobian | ✓ PSD | Sparse | $O(P)$ | HVP, hand-derived closed-form, PyTorch |
+| Weighted-Average WL | Symmetric rank-2 update | **✗ Indefinite** | Sparse | $O(P)$ | HVP, hand-derived closed-form, PyTorch |
+| Timing (planned) | Softmax Jacobian over DAG | **✗ Indefinite** | Sparse | $O(P)$ | Sparse direct solve: assemble $H$, factorize $LDL^\top$, flip sign of $D$ |
 
 The WA WL Hessian is technically indefinite — negative
 eigenvalues can be constructed (e.g., $v^\top H v \approx -0.046$
@@ -36,7 +35,7 @@ non-convexity.
 
 The density Hessian $J_\rho^\top G J_\rho$ is not a Gauss-Newton approximation — it is exact almost everywhere, as the piecewise-linear basis functions have zero second derivatives.
 
-The wirelength HVPs are hand-derived closed-form expressions implemented in PyTorch (no custom CUDA kernels). The density HVP requires the custom Poisson pipeline described below.
+The wirelength HVPs are hand-derived closed-form expressions implemented in PyTorch (no custom CUDA kernels). The density HVP requires the custom Poisson pipeline described below. The timing Hessian, being sparse, is better suited to direct factorization than iterative HVP methods.
 
 All HVPs are verified against finite differences
 (see [Verification](#finite-difference-verification) and [docs/derivation.md](docs/derivation.md) for details).
@@ -65,7 +64,7 @@ The Poisson solver (Step 2) is reused without modification because $G$ is a **li
 The original DREAMPlace computes the gather step (Step 3) using interpolation weights $p_x \cdot p_y$ rather than the exact density Jacobian transpose $J_\rho^\top$. These are related by summation-by-parts and produce equivalent gradients for first-order optimization. However, using $J_\text{interp}^\top$ in the HVP yields a **non-symmetric** product $J_\text{interp}^\top G J_\rho$, which is incorrect for Newton-type methods that require a symmetric Hessian. The new signed kernels implement the exact $J_\rho^\top$ to ensure full symmetry: $H = J_\rho^\top G J_\rho = H^\top$.
 
 **Computational cost.**
-A single density HVP evaluation costs $O(MN_b \log MN_b + N)$ — the same as a single gradient evaluation — with $O(MN_b)$ additional memory for the $\delta\rho$ map. A full Saddle-Free Newton step requires $k$ HVP evaluations (typically $k$ = 20–100 Lanczos iterations), trading per-step cost for faster convergence.
+A single density HVP evaluation costs $O(MN_b \log MN_b + N)$ — the same as a single gradient evaluation — with $O(MN_b)$ additional memory for the $\delta\rho$ map.
 
 ### Finite difference verification
 
@@ -87,23 +86,9 @@ $$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+
 
 ### Future direction
 
-This HVP implementation is a building block toward 
-**Saddle-Free Newton** optimization for timing-driven 
-placement, where differentiable STA objectives introduce 
-strong indefiniteness into the Hessian landscape. Since the 
-density and wirelength objectives are effectively convex, 
-the dominant non-convexity originates from timing.
+This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://github.com/NVlabs/INSTA), [C3PO](https://research.nvidia.com/labs/electronic-design-automation/publication/lu2026aspdac/), [Warp-STAR](https://arxiv.org/abs/2603.28381)) introduce strong indefiniteness into the Hessian landscape. Since the density and wirelength objectives are effectively convex, the dominant non-convexity originates from timing. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
 
-Computing the timing HVP remains an open challenge: 
-current differentiable STA frameworks such as 
-[INSTA](https://github.com/NVlabs/INSTA) distribute 
-their GPU-accelerated STA kernels as pre-compiled binaries, 
-preventing autograd-based HVP computation. Analytical 
-derivation of the timing HVP — using the same adjoint 
-approach applied to the density term in this fork — 
-is a promising direction. Second-order methods can then 
-escape timing-induced saddle points by flipping the sign 
-of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
+Incorporating timing curvature remains an open challenge: current differentiable STA frameworks distribute their GPU-accelerated STA kernels as pre-compiled binaries, preventing autograd-based HVP computation. A promising alternative is to exploit the **sparsity of the timing Hessian** — each gate's local Hessian is a small softmax Jacobian block (same structure as the LSE WL Hessian derived in this fork), and the global timing Hessian can be assembled as a sparse matrix with $O(P)$ non-zeros. A sparse $LDL^\top$ factorization then yields the exact Saddle-Free Newton step by flipping the sign of negative diagonal entries in $D$, without requiring iterative HVP calls.
 
 ---
 
