@@ -1,40 +1,52 @@
-FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-devel
-LABEL maintainer="Yibo Lin <yibolin@pku.edu.cn>"
+# DREAMPlace Dockerfile for RTX 5090 (Blackwell, sm_120)
+# CUDA 12.8 devel (required for sm_120 native compilation)
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+LABEL maintainer="Masaru Nishimura"
 
-# Rotates to the keys used by NVIDIA as of 27-APR-2022.
-RUN rm /etc/apt/sources.list.d/cuda.list
-RUN rm /etc/apt/sources.list.d/nvidia-ml.list
-RUN apt-key del 7fa2af80
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
+ENV DEBIAN_FRONTEND=noninteractive
 
+# System dependencies
+RUN apt-get update && apt-get install -y \
+        flex \
+        libcairo2-dev \
+        libboost-all-dev \
+        bison \
+        git \
+        wget \
+        python3 \
+        python3-pip \
+        python3-dev \
+        libgmp-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Installs system dependencies.
-RUN apt-get update \
-        && apt-get install -y \
-            flex \
-            libcairo2-dev \
-            libboost-all-dev 
+# CMake (3.28+)
+ARG CMAKE_VERSION=3.28.3
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh \
+    && mkdir /opt/cmake \
+    && sh cmake-${CMAKE_VERSION}-linux-x86_64.sh --prefix=/opt/cmake --skip-license \
+    && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake \
+    && rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
 
+# PyTorch 2.5 + CUDA 12.4
+RUN pip3 install --no-cache-dir \
+        torch==2.5.1 \
+        --index-url https://download.pytorch.org/whl/cu124
 
-# Installs system dependencies from conda.
-RUN conda install -y -c conda-forge bison
-
-# Installs cmake.
-ADD https://cmake.org/files/v3.21/cmake-3.21.0-linux-x86_64.sh /cmake-3.21.0-linux-x86_64.sh
-RUN mkdir /opt/cmake \
-        && sh /cmake-3.21.0-linux-x86_64.sh --prefix=/opt/cmake --skip-license \
-        && ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake \
-        && cmake --version
-
-# Installs python dependencies. 
-RUN pip install \
+# Python dependencies for DREAMPlace
+RUN pip3 install --no-cache-dir \
         pyunpack>=0.1.2 \
         patool>=1.12 \
-        matplotlib>=2.2.2 \
+        matplotlib>=3.0 \
         cairocffi>=0.9.0 \
         pkgconfig>=1.4.0 \
         setuptools>=39.1.0 \
-        scipy>=1.1.0 \
-        numpy>=1.15.4 \
-        shapely>=1.7.0
+        scipy>=1.10.0 \
+        numpy>=1.24.0 \
+        shapely>=2.0.0 \
+        hdf5storage
+
+# CUDA architecture for RTX 5090 (sm_120) + backward compat
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.9;12.0"
+ENV CMAKE_CUDA_ARCHITECTURES="80;89;120"
+
+WORKDIR /DREAMPlace
