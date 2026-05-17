@@ -22,20 +22,20 @@ This fork implements **exact Hessian-Vector Products** for all three DREAMPlace 
 | Electric density | $J_\rho^\top G J_\rho$ | ✓ PSD | Dense | $O(MN_b \log MN_b + N)$ | HVP via Poisson pipeline + new CUDA kernels ([detail below](#density-hvp-the-poisson-pipeline)) |
 | LogSumExp WL | Softmax Jacobian | ✓ PSD | Sparse | $O(P)$ | HVP, hand-derived closed-form, PyTorch |
 | Weighted-Average WL | Symmetric rank-2 update | **✗ Indefinite** | Sparse | $O(P)$ | HVP, hand-derived closed-form, PyTorch |
-| Timing (planned) | Softmax Jacobian over DAG | **✗ Indefinite** | Sparse | $O(P)$ | Sparse direct solve: assemble $H$, factorize $LDL^\top$, flip sign of $D$ |
+| Timing (planned) | Delay model $R \times C$ cross-terms over DAG | **✗ Indefinite** | Sparse | $O(P)$ | Sparse Hessian assembly + Saddle-Free Newton |
 
 The WA WL Hessian is technically indefinite — negative
 eigenvalues can be constructed (e.g., $v^\top H v \approx -0.046$
 for a 3-pin net) — but the negative curvature is extremely
 weak in practice and the objective behaves as effectively convex.
 The primary motivation for second-order methods remains
-timing-driven placement, where the min-of-sums structure
-of slack objectives introduces substantially stronger
+timing-driven placement, where the Elmore delay model's
+$R \times C$ cross-terms introduce substantially stronger
 non-convexity.
 
 The density Hessian $J_\rho^\top G J_\rho$ is not a Gauss-Newton approximation — it is exact almost everywhere, as the piecewise-linear basis functions have zero second derivatives.
 
-The wirelength HVPs are hand-derived closed-form expressions implemented in PyTorch (no custom CUDA kernels). The density HVP requires the custom Poisson pipeline described below. The timing Hessian, being sparse, is better suited to direct factorization than iterative HVP methods.
+The wirelength HVPs are hand-derived closed-form expressions implemented in PyTorch (no custom CUDA kernels). The density HVP requires the custom Poisson pipeline described below.
 
 All HVPs are verified against finite differences
 (see [Verification](#finite-difference-verification) and [docs/derivation.md](docs/derivation.md) for details).
@@ -86,9 +86,7 @@ $$\text{FD}_\text{field} = J_\rho^\top(\text{pos}) \cdot \frac{G\rho(\text{pos}+
 
 ### Future direction
 
-This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement, where differentiable STA objectives (e.g., [INSTA](https://github.com/NVlabs/INSTA), [C3PO](https://research.nvidia.com/labs/electronic-design-automation/publication/lu2026aspdac/), [Warp-STAR](https://arxiv.org/abs/2603.28381)) introduce strong indefiniteness into the Hessian landscape. Since the density and wirelength objectives are effectively convex, the dominant non-convexity originates from timing. Second-order methods can escape these saddle points by flipping the sign of negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
-
-Incorporating timing curvature remains an open challenge: current differentiable STA frameworks distribute their GPU-accelerated STA kernels as pre-compiled binaries, preventing autograd-based HVP computation. A promising alternative is to exploit the **sparsity of the timing Hessian** — each gate's local Hessian is a small softmax Jacobian block (same structure as the LSE WL Hessian derived in this fork), and the global timing Hessian can be assembled as a sparse matrix with $O(P)$ non-zeros. A sparse $LDL^\top$ factorization then yields the exact Saddle-Free Newton step by flipping the sign of negative diagonal entries in $D$, without requiring iterative HVP calls.
+This HVP implementation is a building block toward **Saddle-Free Newton** optimization for timing-driven placement. Since the density and wirelength objectives are effectively convex, the dominant non-convexity originates from timing — specifically, from the delay model: the $R \times C$ cross-terms in multi-sink RC trees create bilinear coupling between cell positions, producing an indefinite Hessian. The timing Hessian is **sparse** — its non-zero pattern mirrors the netlist adjacency — which opens the door to scalable second-order methods that flip negative eigenvalues via $|\mathbf{H}|^{-1} \mathbf{g}$.
 
 ---
 
